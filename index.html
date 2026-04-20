@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flappy Block - Deluxe Sound</title>
+    <title>Flappy Block - Leaderboard Edition</title>
     <style>
         :root {
             --bg-dark: #1e1e2e;
             --game-sky: #89b4fa;
             --text-main: #cdd6f4;
-            --text-dark: #11111b;
+            --accent: #f9e2af;
             --font-stack: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
 
@@ -25,24 +25,79 @@
             overflow: hidden;
         }
 
+        #game-container {
+            position: relative;
+        }
+
         canvas {
             background-color: var(--game-sky);
             border-radius: 12px;
             box-shadow: 0 20px 50px rgba(0,0,0,0.5);
             cursor: pointer;
         }
+
+        #login-ui {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30, 30, 46, 0.95);
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid var(--accent);
+            z-index: 10;
+        }
+
+        input {
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            margin-bottom: 10px;
+            width: 80%;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: var(--accent);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #11111b;
+        }
     </style>
 </head>
 <body>
 
-    <canvas id="gameCanvas" width="320" height="480"></canvas>
+    <div id="game-container">
+        <div id="login-ui">
+            <h2>PLAYER LOGIN</h2>
+            <input type="text" id="username" placeholder="Enter Name..." maxlength="10">
+            <br>
+            <button onclick="login()">START GAME</button>
+        </div>
+        <canvas id="gameCanvas" width="320" height="480"></canvas>
+    </div>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
+        const loginUI = document.getElementById("login-ui");
+        const usernameInput = document.getElementById("username");
 
-        // --- Audio Engine ---
+        // --- Data & Audio ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let currentUser = "";
+        let highScores = JSON.parse(localStorage.getItem('flappyScores')) || [];
+
+        function login() {
+            if (usernameInput.value.trim() !== "") {
+                currentUser = usernameInput.value.trim().toUpperCase();
+                loginUI.style.display = "none";
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            }
+        }
 
         function playSuccessSound() {
             const osc = audioCtx.createOscillator();
@@ -140,46 +195,70 @@
         function triggerGameOver() {
             if (state.current === state.game) {
                 state.current = state.over;
+                updateLeaderboard(currentUser, score);
                 playGameOverSound();
             }
+        }
+
+        function updateLeaderboard(name, score) {
+            highScores.push({ name, score });
+            highScores.sort((a, b) => b.score - a.score);
+            highScores = highScores.slice(0, 5); // Keep top 5
+            localStorage.setItem('flappyScores', JSON.stringify(highScores));
         }
 
         // --- UI ---
         function drawUI() {
             ctx.textAlign = "center";
             if (state.current === state.getReady) {
-                ctx.fillStyle = '#11111b'; ctx.font = "bold 40px Arial"; ctx.fillText("FLAPPY", 160, 100);
-                ctx.fillStyle = '#eff1f5'; ctx.fillText("BLOCK", 160, 140);
-                drawBtn(60, 210, 200, 45, "EASY", modes.easy.color);
-                drawBtn(60, 270, 200, 45, "NORMAL", modes.normal.color);
-                drawBtn(60, 330, 200, 45, "HARD", modes.hard.color);
+                ctx.fillStyle = '#11111b'; ctx.font = "bold 40px Arial"; ctx.fillText("FLAPPY", 160, 80);
+                ctx.fillStyle = '#eff1f5'; ctx.fillText("BLOCK", 160, 120);
+                ctx.font = "14px Arial"; ctx.fillText("Logged in as: " + currentUser, 160, 150);
+                
+                drawBtn(60, 210, 200, 40, "EASY", modes.easy.color);
+                drawBtn(60, 260, 200, 40, "NORMAL", modes.normal.color);
+                drawBtn(60, 310, 200, 40, "HARD", modes.hard.color);
             } else if (state.current === state.game) {
                 ctx.fillStyle = '#eff1f5'; ctx.font = "bold 60px Arial"; ctx.fillText(score, 160, 80);
             } else if (state.current === state.over) {
-                ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0,0,320,480);
-                ctx.fillStyle = '#fff'; ctx.font = "bold 30px Arial"; ctx.fillText("GAME OVER", 160, 200);
-                ctx.fillText("Score: " + score, 160, 250);
-                ctx.font = "16px Arial"; ctx.fillText("Click to try again", 160, 300);
+                ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0,0,320,480);
+                ctx.fillStyle = '#fff'; ctx.font = "bold 30px Arial"; ctx.fillText("GAME OVER", 160, 70);
+                
+                // Scoreboard
+                ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fillRect(40, 100, 240, 220);
+                ctx.fillStyle = varColor('--accent'); ctx.font = "bold 18px Arial"; ctx.fillText("LEADERBOARD", 160, 130);
+                
+                ctx.fillStyle = "#fff"; ctx.font = "14px Courier New";
+                highScores.forEach((entry, i) => {
+                    ctx.textAlign = "left";
+                    ctx.fillText(`${i+1}. ${entry.name.padEnd(10)} ${entry.score}`, 70, 165 + (i * 25));
+                });
+                
+                ctx.textAlign = "center";
+                ctx.font = "bold 20px Arial"; ctx.fillText("Your Score: " + score, 160, 360);
+                ctx.font = "14px Arial"; ctx.fillText("Click to Play Again", 160, 400);
             }
         }
+
+        function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name); }
 
         function drawBtn(x, y, w, h, text, color) {
             ctx.fillStyle = color; ctx.fillRect(x,y,w,h);
             ctx.strokeStyle = '#11111b'; ctx.strokeRect(x,y,w,h);
-            ctx.fillStyle = '#11111b'; ctx.font = "bold 20px Arial"; ctx.fillText(text, x+w/2, y+30);
+            ctx.fillStyle = '#11111b'; ctx.font = "bold 18px Arial"; ctx.fillText(text, x+w/2, y+25);
         }
 
         function handleInput(e) {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (currentUser === "") return;
 
             if(state.current === state.getReady) {
                 let rect = canvas.getBoundingClientRect();
                 let mx = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
                 let my = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
                 if(mx >= 60 && mx <= 260) {
-                    if(my >= 210 && my <= 255) { currentDifficulty = modes.easy; startGame(); }
-                    else if(my >= 270 && my <= 315) { currentDifficulty = modes.normal; startGame(); }
-                    else if(my >= 330 && my <= 375) { currentDifficulty = modes.hard; startGame(); }
+                    if(my >= 210 && my <= 250) { currentDifficulty = modes.easy; startGame(); }
+                    else if(my >= 260 && my <= 300) { currentDifficulty = modes.normal; startGame(); }
+                    else if(my >= 310 && my <= 350) { currentDifficulty = modes.hard; startGame(); }
                 }
             } else if(state.current === state.game) {
                 block.flap();
