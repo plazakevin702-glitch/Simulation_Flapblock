@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Block - Deluxe Sound</title>
+    <style>
+        :root {
+            --bg-dark: #1e1e2e;
+            --game-sky: #89b4fa;
+            --text-main: #cdd6f4;
+            --text-dark: #11111b;
+            --font-stack: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: var(--bg-dark);
+            font-family: var(--font-stack);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        canvas {
+            background-color: var(--game-sky);
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="320" height="480"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // --- Audio Engine ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSuccessSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
+            osc.frequency.exponentialRampToValueAtTime(850, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playGameOverSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+        }
+
+        // --- Game Logic ---
+        const state = { current: 0, getReady: 0, game: 1, over: 2 };
+        let frames = 0, score = 0;
+
+        const modes = {
+            easy:   { gravity: 0.17, jump: -3.8, gap: 170, speed: 1.5, color: '#a6e3a1' },
+            normal: { gravity: 0.24, jump: -4.5, gap: 130, speed: 2.2, color: '#f9e2af' },
+            hard:   { gravity: 0.34, jump: -5.1, gap: 100, speed: 3.4, color: '#f38ba8' }
+        };
+        let currentDifficulty = modes.normal;
+
+        const block = {
+            x: 60, y: 200, w: 24, h: 24, velocity: 0,
+            draw() {
+                ctx.fillStyle = '#f9e2af';
+                ctx.fillRect(this.x, this.y, this.w, this.h);
+                ctx.strokeStyle = '#11111b';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, this.w, this.h);
+            },
+            update() {
+                if(state.current === state.getReady) {
+                    this.y = 200 + Math.sin(frames/15) * 8;
+                    return;
+                }
+                this.velocity += currentDifficulty.gravity;
+                this.y += this.velocity;
+                if (this.y + this.h >= canvas.height) triggerGameOver();
+            },
+            flap() { this.velocity = currentDifficulty.jump; }
+        };
+
+        const pipes = {
+            position: [], width: 50,
+            draw() {
+                ctx.fillStyle = '#40a02b';
+                ctx.strokeStyle = '#11111b';
+                for(let p of this.position){
+                    ctx.fillRect(p.x, 0, this.width, p.top);
+                    ctx.strokeRect(p.x, 0, this.width, p.top);
+                    ctx.fillRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
+                    ctx.strokeRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
+                }
+            },
+            update() {
+                if(state.current !== state.game) return;
+                if(frames % 100 === 0){
+                    let top = Math.random() * (canvas.height - currentDifficulty.gap - 80) + 40;
+                    this.position.push({ x: canvas.width, top: top, bottom: canvas.height - currentDifficulty.gap - top, passed: false });
+                }
+                for(let i = 0; i < this.position.length; i++){
+                    let p = this.position[i];
+                    p.x -= currentDifficulty.speed;
+                    if(block.x < p.x + this.width && block.x + block.w > p.x && (block.y < p.top || block.y + block.h > canvas.height - p.bottom)) triggerGameOver();
+                    
+                    if(p.x + this.width < block.x && !p.passed){
+                        score++;
+                        p.passed = true;
+                        playSuccessSound();
+                    }
+                    if(p.x + this.width < 0) this.position.shift();
+                }
+            }
+        };
+
+        function triggerGameOver() {
+            if (state.current === state.game) {
+                state.current = state.over;
+                playGameOverSound();
+            }
+        }
+
+        // --- UI ---
+        function drawUI() {
+            ctx.textAlign = "center";
+            if (state.current === state.getReady) {
+                ctx.fillStyle = '#11111b'; ctx.font = "bold 40px Arial"; ctx.fillText("FLAPPY", 160, 100);
+                ctx.fillStyle = '#eff1f5'; ctx.fillText("BLOCK", 160, 140);
+                drawBtn(60, 210, 200, 45, "EASY", modes.easy.color);
+                drawBtn(60, 270, 200, 45, "NORMAL", modes.normal.color);
+                drawBtn(60, 330, 200, 45, "HARD", modes.hard.color);
+            } else if (state.current === state.game) {
+                ctx.fillStyle = '#eff1f5'; ctx.font = "bold 60px Arial"; ctx.fillText(score, 160, 80);
+            } else if (state.current === state.over) {
+                ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0,0,320,480);
+                ctx.fillStyle = '#fff'; ctx.font = "bold 30px Arial"; ctx.fillText("GAME OVER", 160, 200);
+                ctx.fillText("Score: " + score, 160, 250);
+                ctx.font = "16px Arial"; ctx.fillText("Click to try again", 160, 300);
+            }
+        }
+
+        function drawBtn(x, y, w, h, text, color) {
+            ctx.fillStyle = color; ctx.fillRect(x,y,w,h);
+            ctx.strokeStyle = '#11111b'; ctx.strokeRect(x,y,w,h);
+            ctx.fillStyle = '#11111b'; ctx.font = "bold 20px Arial"; ctx.fillText(text, x+w/2, y+30);
+        }
+
+        function handleInput(e) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            if(state.current === state.getReady) {
+                let rect = canvas.getBoundingClientRect();
+                let mx = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+                let my = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+                if(mx >= 60 && mx <= 260) {
+                    if(my >= 210 && my <= 255) { currentDifficulty = modes.easy; startGame(); }
+                    else if(my >= 270 && my <= 315) { currentDifficulty = modes.normal; startGame(); }
+                    else if(my >= 330 && my <= 375) { currentDifficulty = modes.hard; startGame(); }
+                }
+            } else if(state.current === state.game) {
+                block.flap();
+            } else {
+                state.current = state.getReady;
+                reset();
+            }
+        }
+
+        function startGame() { state.current = state.game; reset(); }
+        function reset() { block.y = 200; block.velocity = 0; pipes.position = []; score = 0; frames = 0; }
+
+        canvas.addEventListener("mousedown", handleInput);
+        canvas.addEventListener("touchstart", (e) => { e.preventDefault(); handleInput(e); }, {passive: false});
+
+        function loop() {
+            ctx.clearRect(0, 0, 320, 480);
+            pipes.update(); block.update();
+            if(state.current === state.game) frames++;
+            pipes.draw(); block.draw(); drawUI();
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+</html>
